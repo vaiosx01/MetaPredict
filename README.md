@@ -5,6 +5,7 @@ The first all-in-one prediction market platform with multi-AI oracle, insurance 
 ## 🌟 Features
 
 - **Multi-AI Oracle Consensus**: 4 AI models from 3 providers with sequential priority and automatic fallback
+- **Chainlink Data Streams**: Real-time price feeds with sub-second updates for price-based predictions
 - **Insurance Pool**: ERC-4626 vault with Venus Protocol yield
 - **Reputation System**: Stake + earn + slash mechanics
 - **Conditional Markets**: If-then predictions
@@ -48,6 +49,169 @@ pnpm hardhat run scripts/deploy.ts --network opbnb-testnet
 # Start frontend
 cd ../frontend
 pnpm dev
+```
+
+## 🔗 Chainlink Data Streams Integration
+
+MetaPredict utiliza **Chainlink Data Streams** para obtener precios en tiempo real con actualizaciones de alta frecuencia (hasta 100ms), permitiendo validar predicciones basadas en precios y resolver mercados automáticamente.
+
+### 📊 Stream IDs Configurados
+
+Los siguientes Stream IDs están configurados y listos para usar:
+
+| Par | Stream ID | Estado |
+|-----|-----------|--------|
+| **BTC/USD** | `0x00039d9e45394f473ab1f050a1b963e6b05351e52d71e507509ada0c95ed75b8` | ✅ Verificado |
+| **ETH/USD** | `0x000362205e10b3a147d02792eccee483dca6c7b44ecce7012cb8c6e0b68b3ae9` | ✅ Verificado |
+| **USDT/USD** | `0x0003a910a43485e0685ff5d6d366541f5c21150f0634c5b14254392d1a1c06db` | ✅ Verificado |
+| **BNB/USD** | `0x000335fd3f3ffa06cfd9297b97367f77145d7a5f132e84c736cc471dd98621fe` | ✅ Verificado |
+| **SOL/USD** | `0x0003b778d3f6b2ac4991302b89cb313f99a42467d6c9c5f96f57c29c0d2bc24f` | ✅ Verificado |
+| **XRP/USD** | `0x0003c16c6aed42294f5cb4741f6e59ba2d728f0eae2eb9e6d3f555808c59fc45` | ✅ Verificado |
+| **USDC/USD** | `0x00038f83323b6b08116d1614cf33a9bd71ab5e0abf0c9f1b783a74a43e7bd992` | ✅ Verificado |
+| **DOGE/USD** | `0x000356ca64d3b32135e17dc0dc721a645bf50d0303be8ceb2cdca0a50bab8fdc` | ✅ Verificado |
+
+### 🔧 Contrato Desplegado
+
+- **Contrato**: `ChainlinkDataStreamsIntegration`
+- **Dirección**: `0xe1a2ac2d4269400904A7240B2B3Cef20DBE7939F`
+- **Network**: opBNB Testnet (Chain ID: 5611)
+- **Verifier Proxy**: `0x001225Aca0efe49Dbb48233aB83a9b4d177b581A`
+- **Explorer**: [Ver en opBNBScan](https://testnet.opbnbscan.com/address/0xe1a2ac2d4269400904A7240B2B3Cef20DBE7939F#code)
+
+### 🚀 Cómo Usar Chainlink Data Streams
+
+#### 1. Configurar un Mercado con Data Streams
+
+```solidity
+// En tu contrato o script
+import "./oracle/ChainlinkDataStreamsIntegration.sol";
+
+ChainlinkDataStreamsIntegration dataStreams = ChainlinkDataStreamsIntegration(
+    0xe1a2ac2d4269400904A7240B2B3Cef20DBE7939F
+);
+
+// Configurar un mercado para usar BTC/USD
+bytes32 btcStreamId = 0x00039d9e45394f473ab1f050a1b963e6b05351e52d71e507509ada0c95ed75b8;
+int256 targetPrice = 50000 * 1e8; // $50,000 en formato del stream
+
+dataStreams.configureMarketStream(
+    marketId,
+    btcStreamId,
+    targetPrice
+);
+```
+
+#### 2. Obtener y Verificar Precios
+
+**Desde Frontend/Backend:**
+
+```typescript
+// 1. Obtener reporte de Data Streams API
+const streamId = "0x00039d9e45394f473ab1f050a1b963e6b05351e52d71e507509ada0c95ed75b8";
+const report = await fetchDataStreamsReport(streamId);
+
+// 2. Verificar on-chain
+const dataStreamsContract = new ethers.Contract(
+  "0xe1a2ac2d4269400904A7240B2B3Cef20DBE7939F",
+  dataStreamsABI,
+  signer
+);
+
+await dataStreamsContract.verifyPriceReport(marketId, report);
+
+// 3. Verificar si se alcanzó el precio objetivo
+const { conditionMet, currentPrice, targetPrice } = 
+  await dataStreamsContract.checkPriceCondition(marketId);
+```
+
+#### 3. Flujo Completo
+
+```
+1. Usuario crea mercado: "¿BTC superará $50K?"
+2. Configurar Stream ID: BTC/USD
+3. Configurar precio objetivo: $50,000
+4. Obtener reporte off-chain desde API de Data Streams
+5. Verificar reporte on-chain usando verifyPriceReport()
+6. Si precio >= objetivo: Resolver mercado automáticamente
+```
+
+### 📝 Variables de Entorno
+
+Agregar a `.env.local`:
+
+```bash
+# Chainlink Data Streams
+CHAINLINK_DATA_STREAMS_VERIFIER_PROXY=0x001225Aca0efe49Dbb48233aB83a9b4d177b581A
+CHAINLINK_DATA_STREAMS_BTC_USD_STREAM_ID=0x00039d9e45394f473ab1f050a1b963e6b05351e52d71e507509ada0c95ed75b8
+CHAINLINK_DATA_STREAMS_ETH_USD_STREAM_ID=0x000362205e10b3a147d02792eccee483dca6c7b44ecce7012cb8c6e0b68b3ae9
+# ... (ver env.example para todos los Stream IDs)
+```
+
+### 🔗 Recursos
+
+- [Chainlink Data Streams Docs](https://docs.chain.link/data-streams)
+- [Data Streams Portal](https://data.chain.link/streams)
+- [Streams API Reference](https://docs.chain.link/data-streams/streams-api-reference)
+- [Supported Networks](https://docs.chain.link/data-streams/supported-networks)
+
+### 📚 Documentación Adicional
+
+- [Guía de Integración Completa](./CHAINLINK_DATA_STREAMS_INTEGRATION.md)
+- [Stream IDs Configurados](./STREAM_IDS_CONFIGURADOS.md)
+- [Recomendaciones de Stream IDs](./RECOMENDACIONES_STREAM_IDS.md)
+
+---
+
+## 📋 Deployed Contracts (opBNB Testnet)
+
+### ✅ All Contracts Verified (10/10) ✅
+
+All contracts are deployed on **opBNB Testnet** (Chain ID: 5611) and verified on [opBNBScan](https://testnet.opbnbscan.com/).
+
+**Last Updated**: November 18, 2025
+
+| Contract | Address | Status | Explorer |
+|----------|---------|--------|----------|
+| **Prediction Market Core** | `0x8BD96cfd4E9B9ad672698D6C18cece8248Fd34F8` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0x8BD96cfd4E9B9ad672698D6C18cece8248Fd34F8#code) |
+| **AI Oracle** | `0xB937f6a00bE40500B3Da15795Dc72783b05c1D18` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0xB937f6a00bE40500B3Da15795Dc72783b05c1D18#code) |
+| **Insurance Pool** | `0x4fec42A17F54870d104bEf233688dc9904Bbd58d` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0x4fec42A17F54870d104bEf233688dc9904Bbd58d#code) |
+| **Reputation Staking** | `0xa62ba5700E24554D342133e326D7b5496F999108` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0xa62ba5700E24554D342133e326D7b5496F999108#code) |
+| **DAO Governance** | `0x6B6a0Ad18f8E13299673d960f7dCeAaBfd64d82c` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0x6B6a0Ad18f8E13299673d960f7dCeAaBfd64d82c#code) |
+| **OmniRouter** | `0xeC153A56E676a34360B884530cf86Fb53D916908` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0xeC153A56E676a34360B884530cf86Fb53D916908#code) |
+| **Binary Market** | `0x4755014b4b34359c27B8A289046524E0987833F9` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0x4755014b4b34359c27B8A289046524E0987833F9#code) |
+| **Conditional Market** | `0x7597bdb2A69FA1D42b4fE8d3F08BF23688DA908a` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0x7597bdb2A69FA1D42b4fE8d3F08BF23688DA908a#code) |
+| **Subjective Market** | `0x3973A4471D1CB66274E33dD7f9802b19D7bF6CDc` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0x3973A4471D1CB66274E33dD7f9802b19D7bF6CDc#code) |
+| **Chainlink Data Streams Integration** | `0xe1a2ac2d4269400904A7240B2B3Cef20DBE7939F` | ✅ Verified | [View on opBNBScan](https://testnet.opbnbscan.com/address/0xe1a2ac2d4269400904A7240B2B3Cef20DBE7939F#code) |
+
+### 📝 External Contracts
+
+| Contract | Address | Description |
+|----------|---------|-------------|
+| **USDC (opBNB Testnet)** | `0x845E27B8A4ad1Fe3dc0b41b900dC8C1Bb45141C3` | Official USDC token on opBNB testnet |
+
+### 🔗 Quick Links
+
+- **Network**: opBNB Testnet (Chain ID: 5611)
+- **Explorer**: [opBNBScan Testnet](https://testnet.opbnbscan.com/)
+- **Deployer Address**: `0x8eC3829793D0a2499971d0D853935F17aB52F800`
+- **Deployment Date**: November 18, 2025
+- **Verification Date**: November 18, 2025
+- **Deployment File**: `smart-contracts/deployments/opbnb-testnet.json`
+- **Verification Status**: ✅ **10/10 contracts verified**
+
+### 🔄 Re-verify Contracts
+
+To re-verify any contract or verify the pending Core contract:
+
+```bash
+cd smart-contracts
+pnpm run verify:all
+```
+
+Or verify a specific contract:
+
+```bash
+pnpm hardhat verify --network opBNBTestnet <CONTRACT_ADDRESS> <CONSTRUCTOR_ARGS>
 ```
 
 ## 🤖 Multi-AI Oracle Consensus System
@@ -167,6 +331,7 @@ For detailed documentation, see [Consensus System Documentation](./docs/CONSENSU
 - [Multi-AI Consensus System](./docs/CONSENSUS_SYSTEM.md)
 - [API Reference](./docs/API.md)
 - [Testing Guide](./docs/TESTING.md)
+- **[🔧 Services Setup Guide](./SERVICES_SETUP.md)** - ⭐ **NUEVO**: Configuración completa de servicios externos (Chainlink, Pyth, Venus, etc.)
 
 ## 🏆 Hackathon Submission
 
@@ -210,7 +375,7 @@ MIT
 
 ## 🙏 Acknowledgments
 
-- Chainlink Functions & CCIP
+- Chainlink Data Streams, CCIP & Functions
 - Thirdweb Embedded Wallets
 - Pyth Network
 - BNB Chain opBNB
