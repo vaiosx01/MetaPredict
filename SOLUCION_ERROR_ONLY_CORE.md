@@ -1,89 +1,131 @@
-# 🔧 Solución al Error "Only core"
+# Solución al Error "Only core"
 
-## Problema
+## 🔍 Problema Identificado
 
-Al intentar crear un mercado en `/demo`, aparece el error:
-```
-Error - Only core
-contract: 0x0bB2643aCE44Bbb4Fdcc3a4fC50eECbe3Ab4a76B
-chainId: 5611
-```
+El error "Only core" ocurre cuando intentas crear un mercado porque el contrato `BinaryMarket` (y otros contratos de mercado) tienen configurado un `coreContract` diferente al `PredictionMarketCore` actual.
 
-## Causa Raíz
+### Causa Raíz
 
-El error ocurre porque:
+El contrato `BinaryMarket` tiene `coreContract` como `immutable`:
 
-1. **`BinaryMarket` tiene `coreContract` como `immutable`**: Se establece en el constructor y no puede cambiarse después del deploy.
-
-2. **El contrato desplegado puede tener configuración incorrecta**: Si el `BinaryMarket` se desplegó con `deployer.address` en lugar de la dirección del `PredictionMarketCore`, el modifier `onlyCore()` fallará.
-
-3. **El flujo correcto es**:
-   - Usuario → `PredictionMarketCore.createBinaryMarket()` 
-   - `PredictionMarketCore` → `BinaryMarket.createMarket()` (con modifier `onlyCore()`)
-   - `BinaryMarket` verifica que `msg.sender == coreContract`
-
-## Solución
-
-### Opción 1: Verificar Configuración del Contrato (Recomendado)
-
-Verificar que el `BinaryMarket` desplegado (`0xA62769c5C4D3f9EB64964241cB1F145bB0294F7E`) tenga configurado `coreContract` como `0x0bB2643aCE44Bbb4Fdcc3a4fC50eECbe3Ab4a76B` (PredictionMarketCore).
-
-**Verificar en opBNBScan:**
-1. Ir a: https://testnet.opbnbscan.com/address/0xA62769c5C4D3f9EB64964241cB1F145bB0294F7E#readContract
-2. Llamar a la función `coreContract()` (view function)
-3. Debe retornar: `0x0bB2643aCE44Bbb4Fdcc3a4fC50eECbe3Ab4a76B`
-
-**Si el valor es diferente:**
-- El contrato fue desplegado incorrectamente
-- Necesita redesplegar `BinaryMarket` con la dirección correcta del Core
-
-### Opción 2: Redesplegar BinaryMarket (Si es necesario)
-
-Si el `coreContract` está mal configurado, redesplegar:
-
-```typescript
-// En smart-contracts/scripts/deploy-fix-binary-market.ts
-const BinaryMarket = await ethers.getContractFactory("BinaryMarket");
-const binaryMarket = await BinaryMarket.deploy(
-  "0x0bB2643aCE44Bbb4Fdcc3a4fC50eECbe3Ab4a76B" // Core address
-);
+```solidity
+address public immutable coreContract;
 ```
 
-Luego actualizar el Core:
-```typescript
-await core.updateModule("binaryMarket", newBinaryMarketAddress);
-```
+Esto significa que:
+- El valor se establece **solo en el constructor** durante el despliegue
+- **No se puede cambiar** después del despliegue
+- Si se desplegó con la dirección incorrecta, **no hay forma de arreglarlo sin redesplegar**
 
-### Opción 3: Verificar que el Frontend use la dirección correcta
+### Flujo del Error
 
-El frontend ya está configurado correctamente para usar `PREDICTION_MARKET` (Core), no `BINARY_MARKET` directamente.
+El error ocurre en dos situaciones:
 
-**Verificar en `frontend/lib/hooks/markets/useCreateMarket.ts`:**
-- ✅ Usa `CONTRACT_ADDRESSES.PREDICTION_MARKET` (Core)
-- ✅ No usa `CONTRACT_ADDRESSES.BINARY_MARKET` directamente
+#### 1. Al Crear un Mercado
+1. Usuario intenta crear un mercado llamando a `PredictionMarketCore.createBinaryMarket()`
+2. El Core llama internamente a `BinaryMarket.createMarket()`
+3. `BinaryMarket` verifica que `msg.sender == coreContract` con el modificador `onlyCore()`
+4. Si `coreContract` no coincide con la dirección del Core, falla con "Only core"
 
-## Verificación
+#### 2. Al Apostar en un Mercado
+1. Usuario intenta apostar llamando a `PredictionMarketCore.placeBet()`
+2. El Core llama internamente a `BinaryMarket.placeBet()` (línea 274 de `PredictionMarketCore.sol`)
+3. `BinaryMarket` verifica que `msg.sender == coreContract` con el modificador `onlyCore()`
+4. Si `coreContract` no coincide con la dirección del Core, falla con "Only core"
 
-1. **Verificar configuración del contrato:**
+## ✅ Solución
+
+### Opción 1: Verificar y Redesplegar (Recomendado)
+
+1. **Verificar la configuración actual**:
    ```bash
-   # En opBNBScan, llamar a coreContract() en BinaryMarket
-   # Debe retornar: 0x0bB2643aCE44Bbb4Fdcc3a4fC50eECbe3Ab4a76B
+   cd smart-contracts
+   pnpm hardhat run scripts/check-contract-config.ts --network opBNBTestnet
    ```
 
-2. **Probar crear mercado:**
-   - Ir a `/demo`
-   - Intentar crear un mercado binario
-   - Debe funcionar sin el error "Only core"
+2. **Si el `coreContract` es incorrecto**, necesitas:
+   - Redesplegar `BinaryMarket` con la dirección correcta del Core
+   - Redesplegar `ConditionalMarket` con la dirección correcta del Core
+   - Redesplegar `SubjectiveMarket` con la dirección correcta del Core
+   - Actualizar el `PredictionMarketCore` para usar las nuevas direcciones
 
-## Estado Actual
+### Opción 2: Cambiar el Diseño del Contrato (Futuro)
 
-- ✅ Frontend configurado correctamente (usa Core)
-- ⚠️ Necesita verificar configuración del contrato desplegado
-- ⚠️ Si está mal, necesita redesplegar o actualizar
+Para evitar este problema en el futuro, considera cambiar `coreContract` de `immutable` a una variable normal con una función `setCoreContract()` protegida por `onlyOwner`:
 
-## Notas
+```solidity
+address public coreContract; // Remover immutable
 
-- El `coreContract` en `BinaryMarket` es `immutable`, por lo que no se puede cambiar después del deploy
-- Si el contrato fue desplegado incorrectamente, la única solución es redesplegar
-- El frontend ya está correcto y usa el Core contract, no los market contracts directamente
+function setCoreContract(address _coreContract) external onlyOwner {
+    require(_coreContract != address(0), "Invalid address");
+    coreContract = _coreContract;
+    emit CoreContractUpdated(_coreContract);
+}
+```
+
+## 🔧 Script de Verificación
+
+He creado un script para verificar la configuración:
+
+```bash
+cd smart-contracts
+pnpm hardhat run scripts/check-contract-config.ts --network opBNBTestnet
+```
+
+Este script:
+- Lee la dirección del `coreContract` desde `BinaryMarket`, `ConditionalMarket` y `SubjectiveMarket`
+- Compara con la dirección esperada del Core
+- Indica si hay un problema de configuración en cada contrato
+- Proporciona instrucciones específicas para solucionar el problema
+
+## 📋 Direcciones Actuales
+
+Según `frontend/lib/contracts/addresses.ts`:
+
+- **Core Contract**: `0x0bB2643aCE44Bbb4Fdcc3a4fC50eECbe3Ab4a76B`
+- **Binary Market**: `0xA62769c5C4D3f9EB64964241cB1F145bB0294F7E`
+
+El `BinaryMarket` debe tener `coreContract = 0x0bB2643aCE44Bbb4Fdcc3a4fC50eECbe3Ab4a76B`
+
+## 🚀 Pasos para Redesplegar
+
+Si necesitas redesplegar:
+
+1. **Desplegar nuevos contratos de mercado** con la dirección correcta del Core:
+   ```typescript
+   const binaryMarket = await BinaryMarket.deploy(
+     CORE_CONTRACT_ADDRESS // Usar la dirección correcta del Core
+   );
+   ```
+
+2. **Actualizar el Core** para usar las nuevas direcciones:
+   ```typescript
+   await core.updateModule("binaryMarket", newBinaryMarketAddress);
+   await core.updateModule("conditionalMarket", newConditionalMarketAddress);
+   await core.updateModule("subjectiveMarket", newSubjectiveMarketAddress);
+   ```
+
+3. **Actualizar el frontend** con las nuevas direcciones en `addresses.ts`
+
+## ⚠️ Nota Importante
+
+Si los contratos ya están en producción con usuarios y fondos, **NO puedes simplemente redesplegar**. En ese caso:
+
+1. Los contratos antiguos seguirán funcionando con la configuración antigua
+2. Necesitarías migrar los datos a los nuevos contratos
+3. Considera implementar un sistema de proxy o upgradeable contracts para el futuro
+
+## 📝 Mejoras Implementadas
+
+He mejorado el manejo de errores en el frontend para mostrar un mensaje más descriptivo cuando ocurre este error:
+
+### En Creación de Mercados (`useCreateMarket.ts`)
+- **Antes**: "Error creating binary market"
+- **Ahora**: "Error de configuración: El contrato BinaryMarket no tiene configurado correctamente el coreContract. El contrato necesita ser redesplegado con la dirección correcta del Core Contract."
+
+### En Apuestas (`usePlaceBet.ts`)
+- **Antes**: "Error placing bet"
+- **Ahora**: "Error de configuración: Los contratos no están correctamente vinculados. Verifica que el contrato core esté configurado en los contratos secundarios."
+
+Esto ayuda a los desarrolladores a identificar el problema más rápidamente tanto al crear mercados como al apostar.
 
